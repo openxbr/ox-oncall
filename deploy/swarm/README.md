@@ -154,11 +154,25 @@ chega **sem** regra pessoal de notificação, de modo que a chain notificaria ni
   os passos 3 a 5, ou atualizar o valor direto na tabela, que não passa pelo hook, se as
   ligações devem ficar.
 
+Para saber qual token vale sem expor nenhum dos dois: no nó da stack (`ONCALL_NODE`), os dois
+hashes têm de sair iguais. Se a primeira linha vier vazia, não há LiveSetting e vale o env.
+
+```bash
+DB=$(docker ps -q -f name=oncall-teste_db)
+echo "select md5(value #>> '{}') from base_livesetting where name='TELEGRAM_TOKEN';" | docker exec -i $DB psql -U oncall -d oncall -At
+grep '^TELEGRAM_TOKEN=' /mnt2/oncall-teste/stack/oncall.env | cut -d= -f2- | tr -d '\n' | md5sum
+```
+
 ## Migrar a stack da PoC (v1.24.10) para a v1.24.10-openx.1
 
 Para uma stack que já roda com a imagem da Appwrite, o `settings_openx.py` e o plugin 1.24.10.
 Os dados (`/mnt2/oncall-teste`) ficam. Entre as duas versões não há migration: além do #2 e do
 #3, só entraram duas atualizações do OpenTelemetry no backend Go do plugin.
+
+Se o token do bot mudou desde a subida da stack antiga, conferir antes os hashes de "Trocar o
+token do bot". Na migração de 15/10/2026 o `oncall.env` já tinha o token novo, mas a LiveSetting
+ainda tinha o revogado. O `telegram-polling` caiu 4 vezes com `InvalidToken: Unauthorized` até o
+token ser gravado pela UI, e as ligações do Telegram precisaram ser refeitas.
 
 Na estação (clone deste repo):
 
@@ -234,4 +248,5 @@ docker image rm \
 ```
 
 No Zabbix: `python3 deploy/zabbix/zbx_oncall_teste.py rollback` (dry-run) e depois com
-`--apply`. No Telegram: revogar o token do bot (`/revoke` no BotFather) se ele apareceu em log.
+`--apply`. No Telegram: revogar o token do bot (`/revoke` no BotFather) se ele apareceu em log,
+e trocar o token como em "Trocar o token do bot".
