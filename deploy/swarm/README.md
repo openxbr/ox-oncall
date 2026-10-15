@@ -1,7 +1,11 @@
 # OnCall de teste num Docker Swarm
 
-Prova de conceito do fork `appwrite/grafana-oncall` na **release publicada v1.24.10**
-(21/09/2026), sem build de imagem. **Não é produção**: o Grafana desta stack é **próprio**
+Prova de conceito do Grafana OnCall na **release OpenX `v1.24.10-openx.1`** deste repo
+(15/10/2026): a v1.24.10 do fork `appwrite/grafana-oncall` mais as correções do #2 e do #3. A
+PoC de 13 a 15/10/2026 rodou na v1.24.10 da Appwrite, com contornos por configuração; a seção
+"Migrar a stack da PoC" leva uma stack daquela versão para esta.
+
+**Não é produção**: o Grafana desta stack é **próprio**
 (o Grafana de produção não recebe plugin de teste), e a integração com o Zabbix usa só objetos
 de teste (`../zabbix/`).
 
@@ -11,7 +15,7 @@ Stack `oncall-teste`, tudo fixado num nó (`ONCALL_NODE`), portas no endereço `
 
 | Serviço | Imagem | Porta | Dados |
 |---|---|---|---|
-| `engine` | `ghcr.io/appwrite/grafana-oncall@sha256:2645…ccf4` (manifest da v1.24.10) | **18080** (host) | — |
+| `engine` | `ghcr.io/openxbr/ox-oncall@sha256:e6d8…0d1d` (manifest da v1.24.10-openx.1) | **18080** (host) | — |
 | `celery` | idem (worker + beat) | — | — |
 | `migrate` | idem (`manage.py migrate`, roda e sai) | — | — |
 | `telegram-polling` | idem (long polling, **0 réplica** até ter bot) | — | — |
@@ -26,7 +30,6 @@ Arquivos desta pasta:
 | `oncall-teste.stack.yml` | a stack |
 | `stack.env.example` | variáveis do deploy, não secretas (`ONCALL_HOST`, `ONCALL_NODE`, `TELEGRAM_POLLING_REPLICAS`) |
 | `gerar-env.sh` | gera `db.env`, `oncall.env`, `grafana.env` (segredos, 600, nunca no git) |
-| `settings_openx.py` | `settings.helm` + `httpx` em WARNING, montado por bind no container (ver abaixo) |
 | `plugin-provisioning.yaml`, `initdb/10-grafana.sql` | aponta o plugin para o engine; cria o banco do Grafana |
 | `configurar_poc.py` | roda no manager e configura tudo pela API: plugin, usuários, token, integração, escala, chain, Telegram |
 
@@ -34,7 +37,7 @@ Arquivos desta pasta:
 
 - **Digest, não tag.** O `COMPATIBILITY.md` do fork diz que o digest do `release-manifest.json`
   é o artefato autoritativo. O plugin vem do zip da mesma release, com o SHA-256 conferido
-  (`08e2d627…4eba`) antes de extrair. Grafana 13.2.0, PostgreSQL 18.6 e Redis 8.2.9 são as
+  (`6d3e765f…eb54`) antes de extrair. Grafana 13.2.0, PostgreSQL 18.6 e Redis 8.2.9 são as
   versões da matriz testada do fork.
 - **Um nó só, portas em `mode: host`.** Sem VXLAN entre os serviços e sem ingress mesh.
 - **`endpoint_mode: dnsrr` em todos os serviços.** No Swarm da PoC (nós em LXC) o VIP da
@@ -44,15 +47,16 @@ Arquivos desta pasta:
 - **`GRAFANA_PUBLIC_URL`.** O install v2 do fork recusa (401) a URL que o plugin informa se
   ela não for igual a `GRAFANA_API_URL` ou a `GRAFANA_PUBLIC_URL`. O plugin informa o
   `root_url` do Grafana, então `GRAFANA_PUBLIC_URL` = `GF_SERVER_ROOT_URL`.
-- **`settings_openx.py` (token fora do log).** O `httpx` do python-telegram-bot loga em INFO a
-  URL de cada chamada à Bot API, e essa URL leva o token do bot. O módulo sobe `httpx` e
-  `httpcore` para WARNING sem build de imagem.
-- **`DJANGO_ALLOW_ASYNC_UNSAFE` só no `telegram-polling`.** Bug do v1.24.10 no long polling: o
-  PTB 22.5 chama o handler num event loop async e o `UpdateManager` usa o ORM síncrono, então
-  todo update que toca o banco (código de verificação, botão de ack) morre com
-  `SynchronousOnlyOperation`. Seguro aqui porque o PTB processa um update por vez
-  (`concurrent_updates=1`). A correção de verdade é `sync_to_async` no
-  `start_telegram_polling.py`.
+- **Release OpenX, não a da Appwrite.** A v1.24.10 tem três defeitos no Telegram que a PoC
+  contornou por configuração: long polling morrendo com `SynchronousOnlyOperation` (contorno:
+  `DJANGO_ALLOW_ASYNC_UNSAFE` no `telegram-polling`), token do bot no log do `httpx` (contorno:
+  um `settings_openx.py` montado por bind) e `AttributeError` em todo `edited_message`. As
+  correções estão no código desde o #2, e a `v1.24.10-openx.1` é a primeira release com elas,
+  por isso a stack não tem mais contorno nenhum. O #3 fez o `publish.yml` publicar em
+  `ghcr.io/openxbr/ox-oncall` (pacote público, o nó puxa sem login).
+- **`license: OpenSource` no provisioning do plugin.** Sem `license` no `jsonData`, o backend do
+  plugin deduz a licença pela própria versão. Até o #3 só `X.Y.Z` contava como OSS, e o plugin
+  `1.24.10-openx.1` falharia em toda chamada. O valor explícito tira a stack dessa regra.
 - **Telemetria desligada.** `SEND_ANONYMOUS_USAGE_STATS`, heartbeat e relay de notificação
   pelo Grafana Cloud em `False`. Sem o último em `False`, ligação e SMS iriam para a Grafana
   Cloud e não para o provedor configurado.
@@ -67,7 +71,7 @@ virar serviço, a stack precisa de TLS num proxy reverso e das portas fechadas.
 ### 1. Na estação (clone deste repo)
 
 ```bash
-scp deploy/swarm/oncall-teste.stack.yml deploy/swarm/gerar-env.sh deploy/swarm/plugin-provisioning.yaml deploy/swarm/settings_openx.py deploy/swarm/stack.env.example deploy/swarm/initdb/10-grafana.sql root@<manager>:/root/
+scp deploy/swarm/oncall-teste.stack.yml deploy/swarm/gerar-env.sh deploy/swarm/plugin-provisioning.yaml deploy/swarm/stack.env.example deploy/swarm/initdb/10-grafana.sql root@<manager>:/root/
 ```
 
 ### 2. No manager
@@ -76,17 +80,16 @@ scp deploy/swarm/oncall-teste.stack.yml deploy/swarm/gerar-env.sh deploy/swarm/p
 S=/mnt2/oncall-teste/stack
 mkdir -p $S /mnt2/oncall-teste/postgres /mnt2/oncall-teste/redis /mnt2/oncall-teste/initdb \
   /mnt2/oncall-teste/grafana/data/plugins /mnt2/oncall-teste/grafana/provisioning/plugins
-mv /root/oncall-teste.stack.yml /root/gerar-env.sh /root/plugin-provisioning.yaml /root/settings_openx.py $S/
+mv /root/oncall-teste.stack.yml /root/gerar-env.sh /root/plugin-provisioning.yaml $S/
 cp /root/stack.env.example $S/stack.env      # editar ONCALL_HOST e ONCALL_NODE
 mv /root/10-grafana.sql /mnt2/oncall-teste/initdb/
 cp $S/plugin-provisioning.yaml /mnt2/oncall-teste/grafana/provisioning/plugins/grafana-oncall-app.yaml
-chmod 644 $S/settings_openx.py
 sh $S/gerar-env.sh            # gera db.env, oncall.env, grafana.env (600), não sobrescreve
 
 # Plugin: baixar, conferir o SHA-256 da release, extrair
-cd /tmp && curl -fsSLO https://github.com/appwrite/grafana-oncall/releases/download/v1.24.10/grafana-oncall-app-1.24.10.zip
-echo "08e2d62742ca584a0b30c26fddf2cd7a428007529ff08fcc618498ba271c4eba  grafana-oncall-app-1.24.10.zip" | sha256sum -c -
-python3 -m zipfile -e grafana-oncall-app-1.24.10.zip /mnt2/oncall-teste/grafana/data/plugins/
+cd /tmp && curl -fsSLO https://github.com/openxbr/ox-oncall/releases/download/v1.24.10-openx.1/grafana-oncall-app-1.24.10-openx.1.zip
+echo "6d3e765f9e557eff0c074f52f072d63ed387dcb9c3e97fb15e030261de8aeb54  grafana-oncall-app-1.24.10-openx.1.zip" | sha256sum -c -
+python3 -m zipfile -e grafana-oncall-app-1.24.10-openx.1.zip /mnt2/oncall-teste/grafana/data/plugins/
 chmod +x /mnt2/oncall-teste/grafana/data/plugins/grafana-oncall-app/gpx_grafana_oncall_app_linux_*
 chown -R 472:0 /mnt2/oncall-teste/grafana/data
 
@@ -134,6 +137,59 @@ chega **sem** regra pessoal de notificação, de modo que a chain notificaria ni
    do limite de 64 do deep link `?start=`, então vai como mensagem.
 5. `telegram-rota <id do canal>` liga a rota padrão da integração ao canal.
 
+## Migrar a stack da PoC (v1.24.10) para a v1.24.10-openx.1
+
+Para uma stack que já roda com a imagem da Appwrite, o `settings_openx.py` e o plugin 1.24.10.
+Os dados (`/mnt2/oncall-teste`) ficam. Entre as duas versões não há migration: além do #2 e do
+#3, só entraram duas atualizações do OpenTelemetry no backend Go do plugin.
+
+Na estação (clone deste repo):
+
+```bash
+scp deploy/swarm/oncall-teste.stack.yml deploy/swarm/plugin-provisioning.yaml root@<manager>:/root/
+```
+
+No manager:
+
+```bash
+S=/mnt2/oncall-teste/stack
+mv /root/oncall-teste.stack.yml /root/plugin-provisioning.yaml $S/
+cp $S/plugin-provisioning.yaml /mnt2/oncall-teste/grafana/provisioning/plugins/grafana-oncall-app.yaml
+
+# Plugin novo no lugar do 1.24.10
+cd /tmp && curl -fsSLO https://github.com/openxbr/ox-oncall/releases/download/v1.24.10-openx.1/grafana-oncall-app-1.24.10-openx.1.zip
+echo "6d3e765f9e557eff0c074f52f072d63ed387dcb9c3e97fb15e030261de8aeb54  grafana-oncall-app-1.24.10-openx.1.zip" | sha256sum -c -
+rm -rf /mnt2/oncall-teste/grafana/data/plugins/grafana-oncall-app
+python3 -m zipfile -e grafana-oncall-app-1.24.10-openx.1.zip /mnt2/oncall-teste/grafana/data/plugins/
+chmod +x /mnt2/oncall-teste/grafana/data/plugins/grafana-oncall-app/gpx_grafana_oncall_app_linux_*
+chown -R 472:0 /mnt2/oncall-teste/grafana/data
+
+cd $S && set -a && . ./stack.env && set +a && docker stack deploy -c oncall-teste.stack.yml oncall-teste
+# o serviço do Grafana não muda de spec; reiniciar para carregar o plugin novo
+docker service update --force oncall-teste_grafana
+```
+
+Conferir, no manager:
+
+```bash
+docker service inspect oncall-teste_engine --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}'   # ghcr.io/openxbr/ox-oncall@sha256:e6d8976f…
+grep '"version"' /mnt2/oncall-teste/grafana/data/plugins/grafana-oncall-app/plugin.json             # 1.24.10-openx.1
+docker service inspect oncall-teste_telegram-polling --format '{{.Spec.TaskTemplate.ContainerSpec.Env}}' | grep -c ASYNC_UNSAFE   # 0
+docker stack ps oncall-teste --format '{{.Name}} {{.CurrentState}}' --filter desired-state=running   # tudo Running
+```
+
+Com tudo `Running`, apagar o arquivo do contorno antigo. Antes disso ele ainda serve a um
+eventual rollback do Swarm para o spec anterior, que o monta:
+
+```bash
+rm /mnt2/oncall-teste/stack/settings_openx.py
+```
+
+Depois, com o bot ligado: código de verificação e botão de ack funcionando; zero linhas com
+`api.telegram.org/bot` em `docker service logs oncall-teste_telegram-polling` e
+`oncall-teste_celery`; e nenhum `AttributeError` de `forward_origin` depois de um ack (o ack
+edita a mensagem do canal, e a edição volta como `edited_message`).
+
 ## Rollback
 
 No manager:
@@ -154,7 +210,7 @@ No nó da stack (opcional, libera disco):
 
 ```bash
 docker image rm \
-  ghcr.io/appwrite/grafana-oncall@sha256:264563b3f2ee01000048612be729c0b93ad9ff7e4ca7dbe6cfe541e52659ccf4 \
+  ghcr.io/openxbr/ox-oncall@sha256:e6d8976fb8d58f3c67e6c9f75e2e7ab5cf54ece7f7c43304d184864f3b970d1d \
   postgres@sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336 \
   redis@sha256:66b7f4c2f3c6ef1b298bbd7b13c806bc6f71e61f1136a4f58710daf2cb053b21 \
   grafana/grafana@sha256:3fd54ae1214669f8355f065ec9f6445d5279a3d77095ab048ca045685272429b

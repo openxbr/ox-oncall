@@ -1,6 +1,7 @@
-# Stack de TESTE do Grafana OnCall (fork appwrite, release v1.24.10) num Docker Swarm.
+# Stack de TESTE do Grafana OnCall (release OpenX v1.24.10-openx.1 de openxbr/ox-oncall) num
+# Docker Swarm.
 #
-# - Imagens fixadas por digest. O do engine vem do release-manifest.json da v1.24.10;
+# - Imagens fixadas por digest. O do engine vem do release-manifest.json da v1.24.10-openx.1;
 #   os outros são as versões da matriz testada em COMPATIBILITY.md (Grafana 13.2.0,
 #   PostgreSQL 18.6, Redis 8.2.9), com o digest resolvido em 13/10/2026.
 # - Tudo fixado num nó (ONCALL_NODE): o tráfego entre os serviços fica na bridge local, sem
@@ -13,7 +14,7 @@
 #   ONCALL_HOST (IP/nome em que as portas 18080/13000 ficam acessíveis), ONCALL_NODE (hostname
 #   do nó), TELEGRAM_POLLING_REPLICAS (0 até existir bot).
 
-x-oncall-image: &oncall-image ghcr.io/appwrite/grafana-oncall@sha256:264563b3f2ee01000048612be729c0b93ad9ff7e4ca7dbe6cfe541e52659ccf4
+x-oncall-image: &oncall-image ghcr.io/openxbr/ox-oncall@sha256:e6d8976fb8d58f3c67e6c9f75e2e7ab5cf54ece7f7c43304d184864f3b970d1d
 
 # dnsrr: o nome do serviço resolve direto para o IP da task, sem VIP. Medido em 15/10/2026 no
 # Swarm onde a PoC rodou (nós em LXC): o VIP da overlay desta stack não respondia (IPVS vazio
@@ -24,13 +25,8 @@ x-placement: &placement
     constraints:
       - node.hostname == ${ONCALL_NODE:?defina ONCALL_NODE (stack.env)}
 
-# settings.openx = settings.helm + httpx em WARNING (ver settings_openx.py: sem isso o token do
-# bot do Telegram vai para o log em cada chamada à Bot API).
-x-oncall-volumes: &oncall-volumes
-  - /mnt2/oncall-teste/stack/settings_openx.py:/etc/app/settings/openx.py:ro
-
 x-oncall-env: &oncall-env
-  DJANGO_SETTINGS_MODULE: settings.openx
+  DJANGO_SETTINGS_MODULE: settings.helm
   OSS: "True"
   BASE_URL: http://${ONCALL_HOST:?defina ONCALL_HOST (stack.env)}:18080
   DATABASE_TYPE: postgresql
@@ -100,7 +96,6 @@ services:
     command: ["python", "manage.py", "migrate", "--noinput"]
     env_file: oncall.env
     environment: *oncall-env
-    volumes: *oncall-volumes
     deploy:
       <<: *placement
       restart_policy:
@@ -113,7 +108,6 @@ services:
     command: ["uwsgi", "--ini", "uwsgi.ini"]
     env_file: oncall.env
     environment: *oncall-env
-    volumes: *oncall-volumes
     ports:
       - target: 8080
         published: 18080
@@ -136,7 +130,6 @@ services:
     command: ["./celery_with_exporter.sh"]
     env_file: oncall.env
     environment: *oncall-env
-    volumes: *oncall-volumes
     deploy:
       <<: *placement
       resources:
@@ -147,21 +140,11 @@ services:
   # TELEGRAM_TOKEN no oncall.env; aí o deploy vai com TELEGRAM_POLLING_REPLICAS=1.
   # ATENÇÃO: ao subir, ele chama deleteWebhook no bot. Bot com outro consumidor de updates
   # (webhook ativo de outro sistema) perde esse consumidor. Conferir getWebhookInfo antes.
-  #
-  # DJANGO_ALLOW_ASYNC_UNSAFE: bug do fork v1.24.10 no long polling. O python-telegram-bot 22.5
-  # chama o handler dentro de um event loop async e o UpdateManager usa o ORM síncrono, então
-  # todo update que toca o banco (código de verificação, botão de ack) morre com
-  # SynchronousOnlyOperation. Medido em 15/10/2026. Seguro aqui porque o PTB processa um
-  # update por vez (concurrent_updates=1, medido no container). Correção de verdade é
-  # sync_to_async no start_telegram_polling.py.
   telegram-polling:
     image: *oncall-image
     command: ["python", "manage.py", "start_telegram_polling"]
     env_file: oncall.env
-    environment:
-      <<: *oncall-env
-      DJANGO_ALLOW_ASYNC_UNSAFE: "true"
-    volumes: *oncall-volumes
+    environment: *oncall-env
     deploy:
       <<: *placement
       replicas: ${TELEGRAM_POLLING_REPLICAS:-0}

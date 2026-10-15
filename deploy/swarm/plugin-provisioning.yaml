@@ -10,3 +10,5 @@ apps:
       stackId: 5
       orgId: 100
       onCallApiUrl: http://engine:8080
+      # Explícito: sem isso o backend do plugin deduz a licença pela versão do plugin.
+      license: OpenSource
