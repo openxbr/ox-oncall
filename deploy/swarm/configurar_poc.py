@@ -18,6 +18,7 @@ Comandos:
   regras                       regra pessoal "notificar pelo Telegram" para os 2 plantonistas
   log <alert_group_id>         linha do tempo do alert group (escalonamento, ack, resolve)
   telegram-codigo              código de verificação do canal (ChatOps -> Telegram)
+  org-nome <nome>              troca o nome da organização (padrão OSS: "Self-Hosted Organization")
   telegram-usuario <login>     código para o plantonista ligar a conta pessoal ao bot
   telegram-rota <canal_id>     liga a rota padrão da integração ao canal do Telegram
   status                       resumo do que existe
@@ -247,6 +248,13 @@ def cmd_log(ag):
         print(rec.get("created_at"), "|", rec.get("type"), "|", (rec.get("action") or "")[:160])
 
 
+def cmd_org_nome(nome):
+    # O OSS cria a organização com SELF_HOSTED_ORG_TITLE ("Self-Hosted Organization") e o sync
+    # nunca mais mexe no nome; é ele que aparece em "This channel is now linked to organization …".
+    body = must(grafana("PUT", PLUGIN + "/current_team", {"name": nome}), "current_team")
+    print("organização:", body.get("name"))
+
+
 def cmd_telegram_codigo():
     # Código para postar no CANAL (ChatOps -> Telegram); o bot confirma no grupo de discussão.
     # É o endpoint que o plugin usa para Telegram; o get_channel_verification_code genérico
@@ -282,6 +290,8 @@ def main():
             "status": cmd_status}
     if len(sys.argv) >= 3 and sys.argv[1] == "telegram-rota":
         return cmd_telegram_rota(sys.argv[2])
+    if len(sys.argv) == 3 and sys.argv[1] == "org-nome":
+        return cmd_org_nome(sys.argv[2])
     if len(sys.argv) == 3 and sys.argv[1] == "telegram-usuario":
         return cmd_telegram_usuario(sys.argv[2])
     if len(sys.argv) == 3 and sys.argv[1] == "log":

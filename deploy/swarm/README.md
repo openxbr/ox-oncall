@@ -136,6 +136,23 @@ chega **sem** regra pessoal de notificação, de modo que a chain notificaria ni
    isso o botão de ack responde "You don't have a permission". O código tem 73 caracteres, acima
    do limite de 64 do deep link `?start=`, então vai como mensagem.
 5. `telegram-rota <id do canal>` liga a rota padrão da integração ao canal.
+6. `org-nome <nome>` troca o nome que o bot mostra em "This channel is now linked to
+   organization …". O OSS cria a organização com `SELF_HOSTED_ORG_TITLE` (padrão
+   "Self-Hosted Organization") e o sync não mexe mais no nome. Numa instalação nova, já pôr
+   `SELF_HOSTED_ORG_TITLE=<nome>` no `oncall.env` antes do primeiro install.
+
+**Trocar o token do bot** (revogado no BotFather, por exemplo) tem duas pegadinhas:
+
+- **Mudar o `oncall.env` não basta.** Na primeira subida, o OnCall copia o `TELEGRAM_TOKEN` do
+  env para a tabela `base_livesetting` (`populate_settings_if_needed`), e daí em diante o banco
+  ganha do env (`LiveSetting.get_setting`). O sintoma é o `telegram-polling` em loop com
+  `telegram.error.InvalidToken: Unauthorized`. O valor tem de ser trocado na LiveSetting:
+  pela tela **Env Variables** do plugin ou por `PUT live_settings/<id>/` com `name` e `value`.
+- **Trocar a LiveSetting apaga as ligações do Telegram.** O hook `_reset_telegram_integration`
+  (`apps/api/views/live_setting.py`) remove todos os canais e todas as contas pessoais
+  ligadas, mesmo quando o bot é o mesmo e só o token mudou. Depois da troca é preciso refazer
+  os passos 3 a 5, ou atualizar o valor direto na tabela, que não passa pelo hook, se as
+  ligações devem ficar.
 
 ## Migrar a stack da PoC (v1.24.10) para a v1.24.10-openx.1
 
