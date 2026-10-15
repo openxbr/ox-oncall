@@ -1,6 +1,6 @@
 import asyncio
 from datetime import datetime
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from asgiref.sync import sync_to_async
@@ -9,6 +9,7 @@ from telegram import Bot, CallbackQuery, Chat, Message, Update, User
 
 from apps.telegram.client import TelegramClient
 from apps.telegram.updates.update_manager import UpdateManager
+from engine.management.commands import start_telegram_polling
 from engine.management.commands.start_telegram_polling import handle_message
 
 
@@ -73,3 +74,14 @@ def test_handle_message_rebinds_update_to_its_own_bot():
     # callback_query.answer() must not use the Application's bot, whose HTTP client belongs to the polling loop
     assert processed_update.callback_query.get_bot() is not application_bot
 
+
+@pytest.mark.django_db
+def test_start_telegram_polling_requests_webhook_update_types():
+    with (
+        patch.object(TelegramClient, "delete_webhook"),
+        patch.object(start_telegram_polling, "Application", MagicMock()) as mock_application_class,
+    ):
+        start_telegram_polling.start_telegram_polling()
+
+    application = mock_application_class.builder.return_value.token.return_value.build.return_value
+    application.run_polling.assert_called_once_with(allowed_updates=["message", "callback_query"])

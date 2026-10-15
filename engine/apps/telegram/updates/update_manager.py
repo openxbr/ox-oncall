@@ -74,21 +74,26 @@ class UpdateManager:
         """
         some updates may not necessarily come from the channel
         (in which case they would contain the `forward_origin` object with MessageOriginChannel).
-        Some updates may come directly from the discussion group, in which case `forward_origin` is not present
+        Some updates may come directly from the discussion group, in which case `forward_origin` is not present.
+        Edits of those messages arrive as `edited_message`, with `update.message` set to None.
         """
+        message = update.effective_message
+        if message is None:
+            return
+
         # In v20+, forward_from_chat is replaced with forward_origin
-        if update.message.forward_origin is None:
+        if message.forward_origin is None:
             return
 
         # Only process messages forwarded from channels
-        if not isinstance(update.message.forward_origin, MessageOriginChannel):
+        if not isinstance(message.forward_origin, MessageOriginChannel):
             return
 
-        channel_chat_id = update.message.forward_origin.chat.id
-        channel_name = update.message.forward_origin.chat.title
+        channel_chat_id = message.forward_origin.chat.id
+        channel_name = message.forward_origin.chat.title
 
-        discussion_group_chat_id = update.message.chat.id
-        discussion_group_name = update.message.chat.title
+        discussion_group_chat_id = message.chat.id
+        discussion_group_name = message.chat.title
 
         TelegramToOrganizationConnector.objects.filter(
             channel_chat_id=channel_chat_id, discussion_group_chat_id=discussion_group_chat_id

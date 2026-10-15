@@ -25,8 +25,10 @@ def start_telegram_polling():
     application.add_handler(MessageHandler(filters.TEXT, handle_message))
     application.add_handler(CallbackQueryHandler(handle_message))
 
-    # start the long polling loop; blocks until interrupted
-    application.run_polling()
+    # start the long polling loop; blocks until interrupted.
+    # Ask for the same update types the webhook registers, so both modes receive the same updates
+    # regardless of what was previously configured for the bot.
+    application.run_polling(allowed_updates=list(TelegramClient.ALLOWED_UPDATES))
 
 
 async def error_handler(update, context):
