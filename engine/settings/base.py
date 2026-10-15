@@ -428,6 +428,9 @@ LOGGING = {
             "level": "INFO",
             "propagate": False,
         },
+        # httpx/httpcore log every request URL at INFO, and Telegram Bot API URLs contain the bot token
+        "httpx": {"level": "WARNING"},
+        "httpcore": {"level": "WARNING"},
         "": {
             "handlers": ["console"],
             "level": "INFO",
