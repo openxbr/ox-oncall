@@ -17,7 +17,7 @@ concurrency:
 
 env:
   RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
-  IMAGE: ghcr.io/appwrite/grafana-oncall
+  IMAGE: ghcr.io/${{ github.repository }}
 
 jobs:
   verify:
