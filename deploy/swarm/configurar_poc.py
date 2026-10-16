@@ -21,6 +21,7 @@ Comandos:
   org-nome <nome>              troca o nome da organização (padrão OSS: "Self-Hosted Organization")
   telegram-usuario <login>     código para o plantonista ligar a conta pessoal ao bot
   telegram-rota <canal_id>     liga a rota padrão da integração ao canal do Telegram
+  telegram-rota off            só DM: a rota para de publicar no canal (alerta completo na DM)
   status                       resumo do que existe
   get <caminho>                GET na API pública (ex.: alert_groups/), só leitura
   iget <caminho>               GET na API interna via plugin (ex.: telegram_channels/), só leitura
@@ -269,10 +270,16 @@ def cmd_telegram_usuario(login):
 
 
 def cmd_telegram_rota(canal):
+    # "off" = só DM: a rota para de publicar no canal, e a notificação pessoal deixa de ser um
+    # link para o post e passa a levar o alerta inteiro, com os botões e o log
+    # (apps/telegram/models/connectors/personal.py, notify()).
     integ = find("integrations/", INTEGRATION)
     route = integ["default_route"]
-    body = {"telegram": {"id": canal, "enabled": True}}
-    print(must(public("PUT", f"routes/{route['id']}/", body), "route"))
+    if canal == "off":
+        body = {"telegram": {"id": (route.get("telegram") or {}).get("id"), "enabled": False}}
+    else:
+        body = {"telegram": {"id": canal, "enabled": True}}
+    print(must(public("PUT", f"routes/{route['id']}/", body), "route")["telegram"])
 
 
 def cmd_status():

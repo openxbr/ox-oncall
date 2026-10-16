@@ -141,6 +141,20 @@ chega **sem** regra pessoal de notificação, de modo que a chain notificaria ni
    "Self-Hosted Organization") e o sync não mexe mais no nome. Numa instalação nova, já pôr
    `SELF_HOSTED_ORG_TITLE=<nome>` no `oncall.env` antes do primeiro install.
 
+**Canal ou só DM.** Com a rota ligada a um canal, cada alerta aparece em 3 lugares:
+
+- **canal:** o card do alerta, editado no mesmo post;
+- **grupo de discussão:** os comentários do post, com "Actions available…" (os botões) e o
+  "Alert group log";
+- **DM de quem foi chamado:** só um link "👀 You are invited…" para o post.
+
+Com `telegram-rota off` a rota para de publicar no canal, e a DM passa a levar o alerta
+inteiro, com os botões e o log (`apps/telegram/models/connectors/personal.py`, `notify()`): 1
+mensagem por pessoa chamada. Medido em 16/10/2026: escalada até o 2º passo, DM entregue 1,6 s
+após o passo, ack pelo botão da DM e nenhum post no canal. O OnCall reedita a DM a cada linha
+nova do log (34 `edit_message` em 15 min para 1 alerta): pesa no rate limit do bot se muitos
+alertas abrirem juntos.
+
 **Trocar o token do bot** (revogado no BotFather, por exemplo) tem duas pegadinhas:
 
 - **Mudar o `oncall.env` não basta.** Na primeira subida, o OnCall copia o `TELEGRAM_TOKEN` do
