@@ -142,6 +142,7 @@ chega **sem** regra pessoal de notificação, de modo que a chain notificaria ni
    `SELF_HOSTED_ORG_TITLE=<nome>` no `oncall.env` antes do primeiro install.
 
 **Canal ou só DM.** Com a rota ligada a um canal, cada alerta aparece em 3 lugares:
+
 - **canal:** o card do alerta, editado no mesmo post;
 - **grupo de discussão:** os comentários do post, com "Actions available…" (os botões) e o
   "Alert group log";
