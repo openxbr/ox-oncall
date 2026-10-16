@@ -1,0 +1,14 @@
+# Provisioning do plugin do OnCall no Grafana de TESTE (vai para
+# /mnt2/oncall-teste/grafana/provisioning/plugins/ no deploy).
+# stackId/orgId são os valores fixos do OSS (iguais ao dev/ e ao helm/ do fork).
+apiVersion: 1
+apps:
+  - type: grafana-oncall-app
+    name: grafana-oncall-app
+    disabled: false
+    jsonData:
+      stackId: 5
+      orgId: 100
+      onCallApiUrl: http://engine:8080
+      # Explícito: sem isso o backend do plugin deduz a licença pela versão do plugin.
+      license: OpenSource

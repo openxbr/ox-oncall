@@ -1,0 +1,193 @@
+# Stack de TESTE do Grafana OnCall (release OpenX v1.24.10-openx.1 de openxbr/ox-oncall) num
+# Docker Swarm.
+#
+# - Imagens fixadas por digest. O do engine vem do release-manifest.json da v1.24.10-openx.1;
+#   os outros são as versões da matriz testada em COMPATIBILITY.md (Grafana 13.2.0,
+#   PostgreSQL 18.6, Redis 8.2.9), com o digest resolvido em 13/10/2026.
+# - Tudo fixado num nó (ONCALL_NODE): o tráfego entre os serviços fica na bridge local, sem
+#   VXLAN entre nós, e as portas publicadas em modo host não passam pelo ingress mesh.
+# - Grafana PRÓPRIO, separado do Grafana de produção, que não deve receber plugin de teste.
+# - Dados em /mnt2/oncall-teste (CephFS). Segredos nos *.env ao lado deste arquivo (fora do
+#   git, gerados por gerar-env.sh).
+#
+# Deploy e rollback: README.md desta pasta. Variáveis do deploy (não secretas) em stack.env:
+#   ONCALL_HOST (IP/nome em que as portas 18080/13000 ficam acessíveis), ONCALL_NODE (hostname
+#   do nó), TELEGRAM_POLLING_REPLICAS (0 até existir bot).
+
+x-oncall-image: &oncall-image
+  ghcr.io/openxbr/ox-oncall@sha256:e6d8976fb8d58f3c67e6c9f75e2e7ab5cf54ece7f7c43304d184864f3b970d1d
+
+# dnsrr: o nome do serviço resolve direto para o IP da task, sem VIP. Medido em 15/10/2026 no
+# Swarm onde a PoC rodou (nós em LXC): o VIP da overlay desta stack não respondia (IPVS vazio
+# no netns do container), o IP da task sim.
+x-placement: &placement
+  endpoint_mode: dnsrr
+  placement:
+    constraints:
+      - node.hostname == ${ONCALL_NODE:?defina ONCALL_NODE (stack.env)}
+
+x-oncall-env: &oncall-env
+  DJANGO_SETTINGS_MODULE: settings.helm
+  OSS: "True"
+  BASE_URL: http://${ONCALL_HOST:?defina ONCALL_HOST (stack.env)}:18080
+  DATABASE_TYPE: postgresql
+  DATABASE_HOST: db
+  DATABASE_PORT: "5432"
+  DATABASE_NAME: oncall
+  DATABASE_USER: oncall
+  BROKER_TYPE: redis
+  REDIS_URI: redis://redis:6379/0
+  GRAFANA_API_URL: http://grafana:3000
+  # O install v2 do fork só aceita a URL que o plugin informa (o root_url do Grafana) se ela
+  # for igual a GRAFANA_API_URL ou a esta. Sem ela, o install volta 401.
+  GRAFANA_PUBLIC_URL: http://${ONCALL_HOST:?defina ONCALL_HOST (stack.env)}:13000
+  FEATURE_TELEGRAM_INTEGRATION_ENABLED: "True"
+  FEATURE_TELEGRAM_LONG_POLLING_ENABLED: "True"
+  # Nada de telemetria nem de relay de notificação pelo Grafana Cloud.
+  SEND_ANONYMOUS_USAGE_STATS: "False"
+  GRAFANA_CLOUD_ONCALL_HEARTBEAT_ENABLED: "False"
+  GRAFANA_CLOUD_NOTIFICATIONS_ENABLED: "False"
+  CELERY_WORKER_QUEUE: "default,critical,long,slack,telegram,mattermost,discord,webhook,retry,celery,grafana"
+  CELERY_WORKER_CONCURRENCY: "2"
+  CELERY_WORKER_MAX_TASKS_PER_CHILD: "100"
+  CELERY_WORKER_SHUTDOWN_INTERVAL: "65m"
+  CELERY_WORKER_BEAT_ENABLED: "True"
+
+services:
+  db:
+    image: postgres:18.6@sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336
+    env_file: db.env
+    environment:
+      POSTGRES_USER: oncall
+      POSTGRES_DB: oncall
+    volumes:
+      # Imagem 18+: o volume é /var/lib/postgresql (PGDATA = .../18/docker).
+      - /mnt2/oncall-teste/postgres:/var/lib/postgresql
+      - /mnt2/oncall-teste/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oncall -d oncall"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      <<: *placement
+      resources:
+        limits:
+          memory: 1g
+
+  redis:
+    image: redis:8.2.9@sha256:66b7f4c2f3c6ef1b298bbd7b13c806bc6f71e61f1136a4f58710daf2cb053b21
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - /mnt2/oncall-teste/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      <<: *placement
+      resources:
+        limits:
+          memory: 512m
+
+  # Roda as migrations e sai. Reinicia até o banco aceitar conexão.
+  migrate:
+    image: *oncall-image
+    command: ["python", "manage.py", "migrate", "--noinput"]
+    env_file: oncall.env
+    environment: *oncall-env
+    deploy:
+      <<: *placement
+      restart_policy:
+        condition: on-failure
+        delay: 15s
+        max_attempts: 20
+
+  engine:
+    image: *oncall-image
+    command: ["uwsgi", "--ini", "uwsgi.ini"]
+    env_file: oncall.env
+    environment: *oncall-env
+    ports:
+      - target: 8080
+        published: 18080
+        protocol: tcp
+        mode: host
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health/', timeout=3)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
+    deploy:
+      <<: *placement
+      resources:
+        limits:
+          memory: 1g
+
+  celery:
+    image: *oncall-image
+    command: ["./celery_with_exporter.sh"]
+    env_file: oncall.env
+    environment: *oncall-env
+    deploy:
+      <<: *placement
+      resources:
+        limits:
+          memory: 1g
+
+  # Long polling: dispensa webhook público do Telegram. Fica em 0 réplica até existir
+  # TELEGRAM_TOKEN no oncall.env; aí o deploy vai com TELEGRAM_POLLING_REPLICAS=1.
+  # ATENÇÃO: ao subir, ele chama deleteWebhook no bot. Bot com outro consumidor de updates
+  # (webhook ativo de outro sistema) perde esse consumidor. Conferir getWebhookInfo antes.
+  telegram-polling:
+    image: *oncall-image
+    command: ["python", "manage.py", "start_telegram_polling"]
+    env_file: oncall.env
+    environment: *oncall-env
+    deploy:
+      <<: *placement
+      replicas: ${TELEGRAM_POLLING_REPLICAS:-0}
+      resources:
+        limits:
+          memory: 512m
+
+  grafana:
+    image: grafana/grafana:13.2.0@sha256:3fd54ae1214669f8355f065ec9f6445d5279a3d77095ab048ca045685272429b
+    env_file: grafana.env
+    environment:
+      GF_SERVER_ROOT_URL: http://${ONCALL_HOST:?defina ONCALL_HOST (stack.env)}:13000
+      GF_DATABASE_TYPE: postgres
+      GF_DATABASE_HOST: db:5432
+      GF_DATABASE_NAME: grafana
+      GF_DATABASE_USER: oncall
+      GF_SECURITY_ADMIN_USER: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      # O que o docker-compose.yml do fork usa para o plugin (não assinado) falar com o engine.
+      GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: grafana-oncall-app
+      GF_FEATURE_TOGGLES_ENABLE: externalServiceAccounts
+      GF_FEATURE_TOGGLES_ACCESSCONTROLONCALL: "false"
+      GF_AUTH_MANAGED_SERVICE_ACCOUNTS_ENABLED: "true"
+      ONCALL_API_URL: http://engine:8080
+    ports:
+      - target: 3000
+        published: 13000
+        protocol: tcp
+        mode: host
+    volumes:
+      # O plugin é extraído (zip com SHA-256 conferido) em data/plugins/grafana-oncall-app.
+      - /mnt2/oncall-teste/grafana/data:/var/lib/grafana
+      - /mnt2/oncall-teste/grafana/provisioning:/etc/grafana/provisioning:ro
+    deploy:
+      <<: *placement
+      resources:
+        limits:
+          memory: 768m
