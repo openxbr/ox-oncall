@@ -109,6 +109,7 @@ O dia zera em `timezone.now().replace(hour=0)` com `TIME_ZONE="UTC"`, ou seja, *
 por segundo nem fila no backend.
 
 **Retries / reenvio:**
+
 - o backend **não espera a ligação terminar**. O próximo passo da política pessoal é agendado com
   `countdown + NEXT_ESCALATION_DELAY` (`notify_user.py:352-363`). `NEXT_ESCALATION_DELAY` vale 5
   [medido: `apps/alerts/constants.py:19`], em segundos [derivado: é `countdown` de Celery, `notify_user.py:361`];
@@ -231,6 +232,7 @@ Ele toca `apps/base/models/live_setting.py`, `settings/base.py`, o app e o teste
 
 `acknowledge_by_user_or_backsync(user, source_channel=None, action_source=None)`
 (`apps/alerts/models/alert_group.py:702-768`), na ordem:
+
 1. Se silenciado: `un_silence()` e log `TYPE_UN_SILENCE` (`:720-729`).
 2. **Se resolvido: `unresolve()` e log `TYPE_UN_RESOLVED`** (`:730-738`).
 3. `acknowledge(acknowledged_by_user=user, …)` (`:740`). O campo em si é idempotente
@@ -261,6 +263,7 @@ A API pública guarda o estado antes de chamar: não faz ack em resolvido, anexa
 | Model + migration | `apps/<app>/models/`, `apps/<app>/migrations/0001_initial.py` | `apps/zvonok/migrations/0001_initial.py` depende de `("phone_notifications", "0001_initial")` (`:11-13`); o `0002` só ajustou o `related_name` (`0002_…py:15-19`) |
 
 Detalhes que mordem:
+
 - O nome da LiveSetting tem `max_length=50` [medido: `live_setting.py:32`]. `save()` recusa nome fora de
   `AVAILABLE_NAMES` (`:324-330`).
 - Tudo isso só vale com `FEATURE_LIVE_SETTINGS_ENABLED`, que é `True` por padrão
@@ -283,6 +286,7 @@ a última hoje. Deve ser gerada por `makemigrations`, que roda o migration linte
 `PhoneBackend.verify_phone_number` → `provider.finish_verification` (`phone_backend.py:412-425`,
 `apps/user_management/models/user.py:252-254`). Sem `verification_call`/`verification_sms` no provedor,
 a UI não verifica. Restam duas opções:
+
 - **(a)** um script de admin (`user.save_verified_phone_number("+55…")`) na fase 1;
 - **(b)** implementar `make_verification_call` como o Zvonok (`phone_provider.py:116-148`): código de 6
   dígitos no cache por 10 min [medido: `randint(100000, 999999)`, `timeout=10*60`], falado pelo Asterisk
@@ -294,7 +298,7 @@ a UI não verifica. Restam duas opções:
 
 ### 4.1 Visão geral
 
-```
+```text
 perform_notification (Celery, fila critical)
   └─ PhoneBackend.notify_by_call
        └─ AsteriskPhoneProvider.make_notification_call(number, text)
@@ -365,7 +369,7 @@ def _originate(self, number, message, call):
 
 ### 4.3 Dialplan (esboço, **não testado**; nomes e sintaxe a validar na versão escolhida)
 
-```
+```text
 [globals]
 ONCALL_CB_URL=https://<base-url-do-oncall>/asterisk/call_events/   ; fixo no Asterisk, não vem do OnCall
 
@@ -399,6 +403,7 @@ exten => s,1,Answer()
 ```
 
 Notas:
+
 - **Por que `Local`:** o failover entre GoIPs e o relatório de `DIALSTATUS` ficam no dialplan.
   Ocupado ou não atendido não dependem do `OriginateResponse` nem da extensão `failed` (ver a tabela).
 - **Failover só em `CHANUNAVAIL`/`CONGESTION`** (trunk/GSM). `BUSY`/`NOANSWER` são decisão humana: quem
@@ -496,6 +501,7 @@ na prática não corre [hipótese]. Um `event=finished` com `CHANUNAVAIL` nos 2 
 milissegundos [hipótese].
 
 Opções:
+
 - **(a)**, recomendada pela simplicidade: aceitar a perda. Só se perde um log FAILED e a escalada
   continua igual. Responder `404` e logar `warning`, como Twilio e Zvonok fazem (`status_callback.py:38-40`
   e `:20-23`);
@@ -553,6 +559,7 @@ Opções:
 ### 4.7 DTMF não confiável via GoIP — o que dá para fazer
 
 **Por que é frágil** (mecanismo provável, não medido) [hipótese]:
+
 - o plantonista aperta a tecla no próprio celular; a rede dele regenera o tom **dentro do áudio** até o
   módulo GSM do GoIP;
 - no caminho há codec GSM/AMR e às vezes VoLTE com interconexão entre operadoras;
@@ -573,6 +580,7 @@ problema pode ser por operadora/chip, não por equipamento.**
 | — | `auto` = RFC4733 se o outro lado anunciar, senão inband [medido: doc res_pjsip] | para atravessar mudança de configuração do GoIP |
 
 Medidas que **não dependem** de escolher o modo certo:
+
 1. **Qualquer tecla confirma.** Um “1” detectado como “4” ainda prova que um humano apertou algo.
    Resolver e silenciar ficam fora do telefone: Telegram, que já tem botão de ack
    (`apps/telegram/updates/update_handlers/button_press.py:117`), e web.
@@ -586,6 +594,7 @@ Medidas que **não dependem** de escolher o modo certo:
    resolve.
 
 **Fallback “atendeu e ficou X s na linha = ack” — decisão do Renato.** Riscos:
+
 - **Caixa postal atende.** Com o celular desligado ou fora de área, a operadora desvia para a caixa,
   que **atende** e fica na linha gravando. O `DIALSTATUS` dá `ANSWER` e o `ANSWEREDTIME` sobe. Seria
   **ack falso justamente quando o plantonista está inalcançável**: o pior caso possível, porque para a
@@ -628,6 +637,7 @@ para RTP: o Swarm em LXC já deu trabalho com ingress e com o VIP da overlay (ve
 A lição do Telegram vale aqui: o canal de alerta já ficou semanas mudo sem ninguém notar
 [derivado: incidente de 21/08–09/10/2026 registrado internamente]. O caminho de acordar precisa de
 monitoramento próprio no Zabbix:
+
 - Asterisk vivo: HTTP agent em `GET /ari/asterisk/info`;
 - estado dos endpoints PJSIP `goip-vbd`/`goip-sp4` via ARI `/endpoints`;
 - registro GSM, sinal e saldo dos chips, pela página de status do GoIP. Se o firmware não expõe SNMP,
@@ -694,6 +704,7 @@ monitoramento próprio no Zabbix:
 ## 6. Esforço estimado [todas as linhas são hipótese] e riscos
 
 Referência de tamanho:
+
 - app Zvonok: 367 linhas sem testes e migrations [medido: `wc -l apps/zvonok/{*.py,models/*.py}`];
 - app Exotel: 349 linhas [medido: idem];
 - commit do MSG91: 204 linhas [medido: `git show --stat a4e8fec4`].
@@ -761,7 +772,8 @@ O `asterisk` fica entre o Zvonok e o Twilio, porque soma callback, guardas e ide
 - [Dialplan function CURLOPT](https://docs.asterisk.org/Latest_API/API_Documentation/Dialplan_Functions/CURLOPT/)
 - [Dialplan application Read](https://docs.asterisk.org/Latest_API/API_Documentation/Dialplan_Applications/Read/)
 - [res_pjsip — dtmf_mode](https://docs.asterisk.org/Latest_API/API_Documentation/Module_Configuration/res_pjsip/)
-- [ASTERISK-26115 — AMI Originate ignora a extensão failed](https://issues-archive.asterisk.org/ASTERISK-26115) e [correção de 2017](https://lists.digium.com/pipermail/asterisk-code-review/2017-February/039240.html)
+- [ASTERISK-26115 — AMI Originate ignora a extensão failed](https://issues-archive.asterisk.org/ASTERISK-26115) e
+  [correção de 2017](https://lists.digium.com/pipermail/asterisk-code-review/2017-February/039240.html)
 - [3CX community — DTMF issue (GoIP4, 1 SIM sem DTMF)](https://www.3cx.com/community/threads/dtmf-issue.107537/)
 - [Piper — VOICES.md](https://raw.githubusercontent.com/rhasspy/piper/master/VOICES.md)
 - [Tecnoblog — Vivo quer desligar a rede 2G “o quanto antes”](https://tecnoblog.net/noticias/vivo-quer-desligar-a-rede-2g-o-quanto-antes/)

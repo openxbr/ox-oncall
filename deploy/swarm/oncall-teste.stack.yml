@@ -14,7 +14,8 @@
 #   ONCALL_HOST (IP/nome em que as portas 18080/13000 ficam acessíveis), ONCALL_NODE (hostname
 #   do nó), TELEGRAM_POLLING_REPLICAS (0 até existir bot).
 
-x-oncall-image: &oncall-image ghcr.io/openxbr/ox-oncall@sha256:e6d8976fb8d58f3c67e6c9f75e2e7ab5cf54ece7f7c43304d184864f3b970d1d
+x-oncall-image: &oncall-image
+  ghcr.io/openxbr/ox-oncall@sha256:e6d8976fb8d58f3c67e6c9f75e2e7ab5cf54ece7f7c43304d184864f3b970d1d
 
 # dnsrr: o nome do serviço resolve direto para o IP da task, sem VIP. Medido em 15/10/2026 no
 # Swarm onde a PoC rodou (nós em LXC): o VIP da overlay desta stack não respondia (IPVS vazio
@@ -114,7 +115,11 @@ services:
         protocol: tcp
         mode: host
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health/', timeout=3)"]
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health/', timeout=3)"
       interval: 30s
       timeout: 5s
       retries: 3

@@ -166,8 +166,8 @@ grep '^TELEGRAM_TOKEN=' /mnt2/oncall-teste/stack/oncall.env | cut -d= -f2- | tr 
 ## Migrar a stack da PoC (v1.24.10) para a v1.24.10-openx.1
 
 Para uma stack que já roda com a imagem da Appwrite, o `settings_openx.py` e o plugin 1.24.10.
-Os dados (`/mnt2/oncall-teste`) ficam. Entre as duas versões não há migration: além do #2 e do
-#3, só entraram duas atualizações do OpenTelemetry no backend Go do plugin.
+Os dados (`/mnt2/oncall-teste`) ficam. Entre as duas versões não há migration: além do #2 e
+do #3, só entraram duas atualizações do OpenTelemetry no backend Go do plugin.
 
 Se o token do bot mudou desde a subida da stack antiga, conferir antes os hashes de "Trocar o
 token do bot". Na migração de 15/10/2026 o `oncall.env` já tinha o token novo, mas a LiveSetting
